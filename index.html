@@ -396,7 +396,7 @@ h1,h2,h3,p{margin:0}
     <main class="scroll home-scroll">
       <div class="home-hero">
         <div class="hero-title">今天想挑战哪一关？</div>
-        <div class="hero-sub">5 个关卡 · 口算 10 题 / 其余 20 题 · 答错扣一颗心</div>
+        <div class="hero-sub">5 个关卡 · 口算 10 题 / 其余 30 题 · 10 级难度随机</div>
       </div>
       <div class="game-list" id="gameList"></div>
       <p class="home-tip">题目范围：小学 1–4 年级数学</p>
@@ -576,16 +576,16 @@ h1,h2,h3,p{margin:0}
   var PREC = { '+': 1, '-': 1, '*': 2, '/': 2 };
   var DIGIT_NAME = ['', '个位', '十位', '百位', '千位'];
   var MAX_LIVES = 3;
-  // 每轮题数：口算 10 题，其余 4 个模块 20 题
-  var ROUND_SIZE = { calc: 10, compare: 20, length: 20, weight: 20, time: 20 };
+  // 每轮题数：口算 10 题，其余 4 个模块 30 题（10 级难度随机）
+  var ROUND_SIZE = { calc: 10, compare: 30, length: 30, weight: 30, time: 30 };
 
   // 一级页面的 5 个关卡
   var GAMES = {
     calc:    { name:'口算闯关',     desc:'自选运算符、位数与结果范围', tag:'自定义出题',       color:'#1a73f0', icon:'×',  total: 10 },
-    compare: { name:'计算大小判断', desc:'比一比，在 ○ 里填 > < =',   tag:'100以内 · 表内乘除', color:'#8b5cf6', icon:'>',  total: 20 },
-    length:  { name:'长度换算闯关', desc:'毫米 厘米 分米 米 千米',     tag:'三年级 · 测量',    color:'#0ea472', icon:'cm', total: 20 },
-    weight:  { name:'重量换算闯关', desc:'克 千克 吨',                 tag:'三年级 · 质量',    color:'#f59e0b', icon:'kg', total: 20 },
-    time:    { name:'时间换算闯关', desc:'时分秒 · 年月日 · 表盘读拨', tag:'二三年级 · 时间', color:'#ec4899', icon:'60', total: 20 }
+    compare: { name:'计算大小判断', desc:'比一比，在 ○ 里填 > < =',   tag:'100以内 · 表内乘除', color:'#8b5cf6', icon:'>',  total: 30 },
+    length:  { name:'长度换算闯关', desc:'毫米 厘米 分米 米 千米',     tag:'三年级 · 复名数加减', color:'#0ea472', icon:'cm', total: 30 },
+    weight:  { name:'重量换算闯关', desc:'克 千克 吨',                 tag:'三年级 · 复名数加减', color:'#f59e0b', icon:'kg', total: 30 },
+    time:    { name:'时间换算闯关', desc:'时分秒 · 年月日 · 表盘读拨', tag:'二三年级 · 复名数加减', color:'#ec4899', icon:'60', total: 30 }
   };
   var GAME_KEYS = ['calc','compare','length','weight','time'];
 
@@ -668,10 +668,49 @@ h1,h2,h3,p{margin:0}
       osc.start(t0); osc.stop(t0 + dur + 0.02);
     } catch (e) { /* 忽略音频错误 */ }
   }
+  /* 频率上滑音：给答对反馈加一点「欢呼上扬」的劲头 */
+  function toneGlide(f0, f1, dur, type, vol, delay) {
+    if (!state.sound) return;
+    try {
+      if (!audioCtx) {
+        var AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return;
+        audioCtx = new AC();
+      }
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      var t0 = audioCtx.currentTime + (delay || 0);
+      var osc = audioCtx.createOscillator();
+      var gain = audioCtx.createGain();
+      osc.type = type || 'sine';
+      osc.frequency.setValueAtTime(f0, t0);
+      osc.frequency.exponentialRampToValueAtTime(f1, t0 + dur * 0.85);
+      gain.gain.setValueAtTime(0.0001, t0);
+      gain.gain.exponentialRampToValueAtTime(vol || 0.05, t0 + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+      osc.connect(gain); gain.connect(audioCtx.destination);
+      osc.start(t0); osc.stop(t0 + dur + 0.02);
+    } catch (e) { /* 忽略音频错误 */ }
+  }
   function soundTap() { tone(760, 0.05, 'sine', 0.035); }
-  function soundOk() {
-    tone(784, 0.12, 'sine', 0.07, 0);
-    tone(1175, 0.16, 'sine', 0.06, 0.09);
+  /* 正确作答：C 大调上行三连音 → 高八度大三和弦齐奏 → 上扬欢呼尾音，连击越高越华丽 */
+  function soundOk(streak) {
+    var combo = streak || 0;
+    // ① 三连音上行 C5 → E5 → G5：短促、有冲劲
+    tone(523, 0.10, 'triangle', 0.050, 0);
+    tone(659, 0.10, 'triangle', 0.055, 0.070);
+    tone(784, 0.11, 'triangle', 0.060, 0.140);
+    // ② 高八度 C 大三和弦齐奏 C6 + E6 + G6，再叠一层闪亮泛音
+    tone(1047, 0.28, 'sine', 0.075, 0.215);
+    tone(1319, 0.24, 'sine', 0.036, 0.215);
+    tone(1568, 0.22, 'sine', 0.024, 0.215);
+    tone(2093, 0.16, 'sine', 0.013, 0.225);
+    // ③ 上扬的欢呼尾音（G5 → C6），收得更有劲
+    toneGlide(784, 1047, 0.22, 'sine', 0.024, 0.300);
+    // ④ 连击奖励：连对 3 题起再补一记更亮的高音「叮」，越连越鼓舞
+    if (combo >= 3) {
+      tone(1760, 0.10, 'sine', 0.040, 0.340);
+      tone(2093, 0.14, 'sine', 0.032, 0.400);
+    }
   }
   function soundBad() {
     tone(196, 0.2, 'triangle', 0.07, 0);
@@ -1049,6 +1088,81 @@ h1,h2,h3,p{margin:0}
       '填上合适的单位', it.explain || '');
   }
 
+  /* ---- 难度梯度：10 级，按等级解锁题型并逐步放大数值 ---- */
+  var QUIZ_LEVELS = 10;
+  function lvMax(level, lo, hi) {
+    return Math.max(lo, Math.min(hi, Math.round(lo + (hi - lo) * (level - 1) / (QUIZ_LEVELS - 1))));
+  }
+  // 从当前等级已解锁的题型里按权重随机挑一个生成
+  function lvGen(level, pool) {
+    var ok = [], total = 0, i;
+    for (i = 0; i < pool.length; i++) {
+      if (level >= (pool[i].min || 1)) { ok.push(pool[i]); total += (pool[i].w || 1); }
+    }
+    if (!ok.length) { ok.push(pool[0]); total = (ok[0].w || 1); }
+    var r = Math.random() * total;
+    for (i = 0; i < ok.length; i++) {
+      r -= (ok[i].w || 1);
+      if (r <= 0) return ok[i].gen(level);
+    }
+    return ok[ok.length - 1].gen(level);
+  }
+  function randSmall(sm) { // sm = [最小值, 最大值, 步长]
+    var step = sm[2] || 1;
+    return sm[0] + randInt(0, Math.floor((sm[1] - sm[0]) / step)) * step;
+  }
+
+  /* 复名数加减：a大单位b小单位 ± c大单位d小单位，答案统一用小单位
+     例：5米10分米 − 2米3分米 = 37分米；3千克500克 − 1千克800克 = 1700克；
+         2时30分 − 1时45分 = 45分 */
+  var ADD_LEN = [
+    {b:'米',s:'分米',r:10,sm:[1,15,1]}, {b:'分米',s:'厘米',r:10,sm:[1,15,1]},
+    {b:'厘米',s:'毫米',r:10,sm:[1,15,1]}, {b:'米',s:'厘米',r:100,sm:[1,99,1]},
+    {b:'千米',s:'米',r:1000,sm:[100,900,100]}
+  ];
+  var ADD_WEI = [
+    {b:'千克',s:'克',r:1000,sm:[100,900,100]}, {b:'吨',s:'千克',r:1000,sm:[100,900,100]}
+  ];
+  var ADD_TIM = [
+    {b:'时',s:'分',r:60,sm:[5,55,5]}, {b:'分',s:'秒',r:60,sm:[5,55,5]},
+    {b:'日',s:'时',r:24,sm:[1,20,1]}, {b:'周',s:'天',r:7,sm:[1,6,1]}
+  ];
+  function unitAddSubQuiz(pair, level) {
+    var r = pair.r, B = pair.b, S = pair.s;
+    var cap = lvMax(level, 3, 9);
+    var a = randInt(1, cap), b1 = randSmall(pair.sm);
+    var c = randInt(1, cap), d1 = randSmall(pair.sm);
+    var v1 = a * r + b1, v2 = c * r + d1;
+    var op, value, left, right;
+    if (Math.random() < 0.5) { op = '+'; value = v1 + v2; left = v1; right = v2; }
+    else {
+      op = '−';
+      if (v1 >= v2) { value = v1 - v2; left = v1; right = v2; }
+      else {
+        value = v2 - v1; left = v2; right = v1;
+        var ta = a, tb = b1; a = c; b1 = d1; c = ta; d1 = tb;
+      }
+    }
+    var expr = nw(a + B + b1 + S) + ' ' + op + ' ' + nw(c + B + d1 + S);
+    return qInput(expr, value, S, '=', '先统一成「' + S + '」，再计算',
+      '统一单位：' + left + ' ' + S + ' ' + op + ' ' + right + ' ' + S + ' = ' + value + ' ' + S);
+  }
+  // 复名数与单名数比大小（计算大小判断 · 高等级，题面短）
+  function unitMixedCompareQuiz(level) {
+    var p = pick([
+      {b:'米',s:'分米',r:10,sm:[1,15,1]}, {b:'分米',s:'厘米',r:10,sm:[1,15,1]},
+      {b:'千克',s:'克',r:1000,sm:[100,900,100]}, {b:'时',s:'分',r:60,sm:[5,55,5]}
+    ]);
+    var big = randInt(1, lvMax(level, 3, 9)), small = randSmall(p.sm);
+    var leftVal = big * p.r + small;
+    var rightBig = randInt(1, Math.max(2, Math.floor(leftVal / p.r)));
+    var rightVal = rightBig * p.r;
+    var ans = leftVal > rightVal ? '>' : (leftVal < rightVal ? '<' : '=');
+    return qChoice(nw(big + p.b + small + p.s) + ' <span class="cmp">○</span> ' + nw(rightBig + p.b),
+      ['>', '<', '='], ans, '先统一单位，再比较大小',
+      '1 ' + p.b + ' = ' + p.r + ' ' + p.s + '，左边 = ' + leftVal + ' ' + p.s);
+  }
+
   var CMP_ALL = [
     {b:'米',s:'厘米',r:100}, {b:'分米',s:'厘米',r:10}, {b:'厘米',s:'毫米',r:10},
     {b:'千米',s:'米',r:1000}, {b:'千克',s:'克',r:1000}, {b:'吨',s:'千克',r:1000},
@@ -1079,22 +1193,31 @@ h1,h2,h3,p{margin:0}
     {text:'做一次深呼吸约 5', options:['时','分','秒'], answer:'秒'}
   ];
 
-  /* ---- 计算大小判断 ---- */
-  function makeCompareQuiz(level) {
-    if (level === 3 && Math.random() < 0.45) return unitCompareQuiz(CMP_ALL, '先统一单位，再比较大小');
-    var target = pick(['>', '<', '=']);
-    var a = randInt(12, 88);
-    var b = target === '=' ? a : (target === '>' ? a - randInt(1, 9) : a + randInt(1, 9));
-    if (b < 1) b = a + 2;
-    var lh, rh;
-    if (level === 1) { lh = String(a); rh = String(b); }
-    else {
-      lh = Math.random() < 0.82 ? asCalcExpr(a) : String(a);
-      rh = Math.random() < 0.82 ? asCalcExpr(b) : String(b);
-    }
-    return qChoice(lh + ' <span class="cmp">○</span> ' + rh, ['>', '<', '='], target,
-      '先算出两边的得数，再填 >、< 或 =', '两边得数分别是 ' + a + ' 和 ' + b);
-  }
+  /* ---- 计算大小判断：1~2 级比大小，3 级起加算式，5 级起加单位，8 级起加复名数 ---- */
+  var CMP_CALC_POOL = [
+    {min:1, w:3, gen:function(lv){
+      var target = pick(['>', '<', '=']);
+      var hi = lvMax(lv, 20, 99);
+      var a = randInt(12, hi);
+      var b = target === '=' ? a : (target === '>' ? a - randInt(1, 9) : a + randInt(1, 9));
+      if (b < 1) b = a + 2;
+      return qChoice(a + ' <span class="cmp">○</span> ' + b, ['>', '<', '='], target,
+        '在 ○ 里填 >、< 或 =', '比较两位数的大小');
+    }},
+    {min:3, w:3, gen:function(){
+      var target = pick(['>', '<', '=']);
+      var a = randInt(12, 88);
+      var b = target === '=' ? a : (target === '>' ? a - randInt(1, 9) : a + randInt(1, 9));
+      if (b < 1) b = a + 2;
+      var lh = Math.random() < 0.82 ? asCalcExpr(a) : String(a);
+      var rh = Math.random() < 0.82 ? asCalcExpr(b) : String(b);
+      return qChoice(lh + ' <span class="cmp">○</span> ' + rh, ['>', '<', '='], target,
+        '先算出两边的得数，再填 >、< 或 =', '两边得数分别是 ' + a + ' 和 ' + b);
+    }},
+    {min:5, w:2, gen:function(){ return unitCompareQuiz(CMP_ALL, '先统一单位，再比较大小'); }},
+    {min:8, w:2, gen:function(lv){ return unitMixedCompareQuiz(lv); }}
+  ];
+  function makeCompareQuiz(level) { return lvGen(level, CMP_CALC_POOL); }
 
   /* ---- 长度换算 ---- */
   var LEN_PAIRS = [
@@ -1102,61 +1225,60 @@ h1,h2,h3,p{margin:0}
     {b:'米',s:'厘米',r:100}, {b:'分米',s:'毫米',r:100}, {b:'米',s:'毫米',r:1000},
     {b:'千米',s:'米',r:1000}
   ];
-  function makeLengthQuiz(level) {
-    var p, x, n;
-    if (level === 1) {
-      p = pick(LEN_PAIRS);
-      if (Math.random() < 0.6) {
-        x = randInt(2, 9);
-        return qInput(x + ' ' + p.b, x * p.r, p.s, '=', '大单位换小单位：乘进率', '1 ' + p.b + ' = ' + p.r + ' ' + p.s);
-      }
-      n = randInt(2, 9);
-      return qInput((n * p.r) + ' ' + p.s, n, p.b, '=', '小单位换大单位：除进率', '1 ' + p.b + ' = ' + p.r + ' ' + p.s);
-    }
-    if (level === 2) {
-      var r2 = randInt(1, 4);
-      if (r2 === 1) { var m2 = randInt(1, 4), c2 = randInt(1, 9) * 10; return qInput(m2 + ' 米 ' + c2 + ' 厘米', m2 * 100 + c2, '厘米', '=', '先把米换成厘米', '1 米 = 100 厘米'); }
-      if (r2 === 2) { var d2 = randInt(1, 4), cm2 = randInt(1, 9); return qInput(d2 + ' 分米 ' + cm2 + ' 厘米', d2 * 10 + cm2, '厘米', '=', '先把分米换成厘米', '1 分米 = 10 厘米'); }
-      if (r2 === 3) { var k2 = randInt(1, 4), mm2 = randInt(1, 9) * 100; return qInput(k2 + ' 千米 ' + mm2 + ' 米', k2 * 1000 + mm2, '米', '=', '先把千米换成米', '1 千米 = 1000 米'); }
-      var m3 = randInt(1, 4), d3 = randInt(1, 9);
-      return qInput(m3 + ' 米 ' + d3 + ' 分米', m3 * 10 + d3, '分米', '=', '先把米换成分米', '1 米 = 10 分米');
-    }
-    var r3 = randInt(1, 5);
-    if (r3 === 1) { var m4 = randInt(2, 6), c4 = randInt(1, 9) * 10; return qInput(m4 + ' 米 − ' + c4 + ' 厘米', m4 * 100 - c4, '厘米', '=', '先统一单位再计算', '1 米 = 100 厘米'); }
-    if (r3 === 2) { var dm = pick([10, 20, 30]), aa = randInt(1, dm - 1); return qInput(aa + ' 分米 + ' + (dm - aa) + ' 分米', dm / 10, '米', '=', '先算一共多少分米', '10 分米 = 1 米'); }
-    if (r3 === 3) { var kk = randInt(3, 9), mm3 = randInt(1, kk - 1) * 1000; return qInput(kk + ' 千米 − ' + mm3 + ' 米', kk - mm3 / 1000, '千米', '=', '先把米换成千米', '1 千米 = 1000 米'); }
-    if (r3 === 4) return unitCompareQuiz(CMP_LEN);
-    return unitChoiceQuiz(UNIT_LEN);
-  }
+  var LEN_POOL = [
+    {min:1, w:3, gen:function(lv){                       // 单步换算
+      var p = pick(LEN_PAIRS), x = randInt(2, lvMax(lv, 4, 9));
+      if (Math.random() < 0.6) return qInput(x + ' ' + p.b, x * p.r, p.s, '=', '大单位换小单位：乘进率', '1 ' + p.b + ' = ' + p.r + ' ' + p.s);
+      return qInput((x * p.r) + ' ' + p.s, x, p.b, '=', '小单位换大单位：除进率', '1 ' + p.b + ' = ' + p.r + ' ' + p.s);
+    }},
+    {min:2, w:3, gen:function(lv){                       // 复名数 → 小单位
+      var p = pick(LEN_PAIRS), big = randInt(1, lvMax(lv, 3, 8)), small;
+      if (p.r >= 1000) small = randInt(1, 9) * 100;
+      else if (p.r === 100) small = randInt(1, 9) * 10;
+      else small = randInt(1, 9);
+      return qInput(big + ' ' + p.b + ' ' + small + ' ' + p.s, big * p.r + small, p.s, '=',
+        '先把' + p.b + '换成' + p.s, '1 ' + p.b + ' = ' + p.r + ' ' + p.s);
+    }},
+    {min:3, w:1, gen:function(){ return unitChoiceQuiz(UNIT_LEN); }},
+    {min:4, w:2, gen:function(){ return unitCompareQuiz(CMP_LEN); }},
+    {min:5, w:2, gen:function(){                         // 同单位简单加减
+      var r5 = randInt(1, 4);
+      if (r5 === 1) { var m4 = randInt(2, 6), c4 = randInt(1, 9) * 10; return qInput(m4 + ' 米 − ' + c4 + ' 厘米', m4 * 100 - c4, '厘米', '=', '先统一单位再计算', '1 米 = 100 厘米'); }
+      if (r5 === 2) { var dm = pick([10, 20, 30]), aa = randInt(1, dm - 1); return qInput(aa + ' 分米 + ' + (dm - aa) + ' 分米', dm / 10, '米', '=', '先算一共多少分米', '10 分米 = 1 米'); }
+      if (r5 === 3) { var kk = randInt(3, 9), mm3 = randInt(1, kk - 1) * 1000; return qInput(kk + ' 千米 − ' + mm3 + ' 米', kk - mm3 / 1000, '千米', '=', '先把米换成千米', '1 千米 = 1000 米'); }
+      return unitCompareQuiz(CMP_LEN);
+    }},
+    {min:6, w:4, gen:function(lv){ return unitAddSubQuiz(pick(ADD_LEN), lv); }},
+    {min:9, w:3, gen:function(lv){ return unitAddSubQuiz(pick(ADD_LEN), lv); }}
+  ];
+  function makeLengthQuiz(level) { return lvGen(level, LEN_POOL); }
 
   /* ---- 重量换算 ---- */
   var WEI_PAIRS = [{b:'千克',s:'克',r:1000}, {b:'吨',s:'千克',r:1000}];
-  function makeWeightQuiz(level) {
-    var p, x, n;
-    if (level === 1) {
-      p = pick(WEI_PAIRS);
-      if (Math.random() < 0.6) {
-        x = randInt(2, 9);
-        return qInput(x + ' ' + p.b, x * 1000, p.s, '=', '大单位换小单位：乘 1000', '1 ' + p.b + ' = 1000 ' + p.s);
-      }
-      n = randInt(2, 9);
-      return qInput((n * 1000) + ' ' + p.s, n, p.b, '=', '小单位换大单位：除 1000', '1 ' + p.b + ' = 1000 ' + p.s);
-    }
-    if (level === 2) {
-      var r2 = randInt(1, 4);
-      if (r2 === 1) { var k = randInt(1, 4), g = randInt(1, 9) * 100; return qInput(k + ' 千克 ' + g + ' 克', k * 1000 + g, '克', '=', '先把千克换成克', '1 千克 = 1000 克'); }
-      if (r2 === 2) { var t = randInt(1, 4), kg = randInt(1, 9) * 100; return qInput(t + ' 吨 ' + kg + ' 千克', t * 1000 + kg, '千克', '=', '先把吨换成千克', '1 吨 = 1000 千克'); }
-      if (r2 === 3) { var total = pick([1000, 2000]), ga = randInt(1, total / 100 - 1) * 100; return qInput(ga + ' 克 + ' + (total - ga) + ' 克', total / 1000, '千克', '=', '先算一共多少克', '1000 克 = 1 千克'); }
-      var kk = randInt(2, 9);
-      return qInput(kk + ' 千克', kk * 1000, '克', '=', '大单位换小单位：乘 1000', '1 千克 = 1000 克');
-    }
-    var r3 = randInt(1, 5);
-    if (r3 === 1) { var k2 = randInt(2, 9), g2 = randInt(1, 9) * 100; return qInput(k2 + ' 千克 − ' + g2 + ' 克', k2 * 1000 - g2, '克', '=', '先统一单位再计算', '1 千克 = 1000 克'); }
-    if (r3 === 2) { var t2 = randInt(3, 9), kg2 = randInt(1, t2 - 1) * 1000; return qInput(t2 + ' 吨 − ' + kg2 + ' 千克', t2 - kg2 / 1000, '吨', '=', '先把千克换成吨', '1 吨 = 1000 千克'); }
-    if (r3 === 3) { var total3 = pick([1000, 2000, 3000]), a3 = randInt(1, total3 / 100 - 1) * 100; return qInput(a3 + ' 克 + ' + (total3 - a3) + ' 克', total3 / 1000, '千克', '=', '先算一共多少克', '1000 克 = 1 千克'); }
-    if (r3 === 4) return unitCompareQuiz(CMP_WEI);
-    return unitChoiceQuiz(UNIT_WEI);
-  }
+  var WEI_POOL = [
+    {min:1, w:3, gen:function(lv){                       // 单步换算
+      var p = pick(WEI_PAIRS), x = randInt(2, lvMax(lv, 4, 9));
+      if (Math.random() < 0.6) return qInput(x + ' ' + p.b, x * 1000, p.s, '=', '大单位换小单位：乘 1000', '1 ' + p.b + ' = 1000 ' + p.s);
+      return qInput((x * 1000) + ' ' + p.s, x, p.b, '=', '小单位换大单位：除 1000', '1 ' + p.b + ' = 1000 ' + p.s);
+    }},
+    {min:2, w:3, gen:function(lv){                       // 复名数 → 小单位
+      var p = pick(WEI_PAIRS), big = randInt(1, lvMax(lv, 3, 8)), small = randInt(1, 9) * 100;
+      return qInput(big + ' ' + p.b + ' ' + small + ' ' + p.s, big * 1000 + small, p.s, '=',
+        '先把' + p.b + '换成' + p.s, '1 ' + p.b + ' = 1000 ' + p.s);
+    }},
+    {min:3, w:1, gen:function(){ return unitChoiceQuiz(UNIT_WEI); }},
+    {min:4, w:2, gen:function(){ return unitCompareQuiz(CMP_WEI); }},
+    {min:5, w:2, gen:function(){                         // 同单位简单加减
+      var r5 = randInt(1, 4);
+      if (r5 === 1) { var k2 = randInt(2, 9), g2 = randInt(1, 9) * 100; return qInput(k2 + ' 千克 − ' + g2 + ' 克', k2 * 1000 - g2, '克', '=', '先统一单位再计算', '1 千克 = 1000 克'); }
+      if (r5 === 2) { var t2 = randInt(3, 9), kg2 = randInt(1, t2 - 1) * 1000; return qInput(t2 + ' 吨 − ' + kg2 + ' 千克', t2 - kg2 / 1000, '吨', '=', '先把千克换成吨', '1 吨 = 1000 千克'); }
+      if (r5 === 3) { var total3 = pick([1000, 2000, 3000]), a3 = randInt(1, total3 / 100 - 1) * 100; return qInput(a3 + ' 克 + ' + (total3 - a3) + ' 克', total3 / 1000, '千克', '=', '先算一共多少克', '1000 克 = 1 千克'); }
+      return unitCompareQuiz(CMP_WEI);
+    }},
+    {min:6, w:4, gen:function(lv){ return unitAddSubQuiz(pick(ADD_WEI), lv); }},
+    {min:9, w:3, gen:function(lv){ return unitAddSubQuiz(pick(ADD_WEI), lv); }}
+  ];
+  function makeWeightQuiz(level) { return lvGen(level, WEI_POOL); }
 
   /* ---- 时间换算 ---- */
   function two(n) { return (n < 10 ? '0' + n : n) + ''; }
@@ -1200,37 +1322,39 @@ h1,h2,h3,p{margin:0}
       dy, '年', '', '结束年份 − 开始年份 = 经过年数', '');
   }
 
-  function makeTimeQuiz(level) {
-    if (level === 1) {
-      var r1 = randInt(1, 7);
-      if (r1 === 1) { var h = randInt(2, 9); return qInput(h + ' 时', h * 60, '分', '=', '1 时 = 60 分', '大单位换小单位：乘 60'); }
-      if (r1 === 2) { var m = randInt(2, 9); return qInput(m + ' 分', m * 60, '秒', '=', '1 分 = 60 秒', '大单位换小单位：乘 60'); }
-      if (r1 === 3) { var s = randInt(2, 9) * 60; return qInput(s + ' 秒', s / 60, '分', '=', '1 分 = 60 秒', '小单位换大单位：除 60'); }
+  var TIM_POOL = [
+    {min:1, w:3, gen:function(lv){                       // 单步换算
+      var cap = lvMax(lv, 4, 12), r1 = randInt(1, 7);
+      if (r1 === 1) { var h = randInt(2, cap); return qInput(h + ' 时', h * 60, '分', '=', '1 时 = 60 分', '大单位换小单位：乘 60'); }
+      if (r1 === 2) { var m = randInt(2, cap); return qInput(m + ' 分', m * 60, '秒', '=', '1 分 = 60 秒', '大单位换小单位：乘 60'); }
+      if (r1 === 3) { var s = randInt(2, cap) * 60; return qInput(s + ' 秒', s / 60, '分', '=', '1 分 = 60 秒', '小单位换大单位：除 60'); }
       if (r1 === 4) { var f = randInt(2, 6) * 60; return qInput(f + ' 分', f / 60, '时', '=', '1 时 = 60 分', '小单位换大单位：除 60'); }
-      if (r1 === 5) { var d = randInt(2, 9); return qInput(d + ' 日', d * 24, '时', '=', '1 日 = 24 时', '1 日 = 24 时'); }
-      if (r1 === 6) { var w = randInt(2, 9); return qInput(w + ' 周', w * 7, '天', '=', '1 周 = 7 天', '1 周 = 7 天'); }
-      var hh = randInt(2, 9) * 24;
+      if (r1 === 5) { var d = randInt(2, cap); return qInput(d + ' 日', d * 24, '时', '=', '1 日 = 24 时', '1 日 = 24 时'); }
+      if (r1 === 6) { var w = randInt(2, cap); return qInput(w + ' 周', w * 7, '天', '=', '1 周 = 7 天', '1 周 = 7 天'); }
+      var hh = randInt(2, cap) * 24;
       return qInput(hh + ' 时', hh / 24, '日', '=', '1 日 = 24 时', '1 日 = 24 时');
-    }
-    if (level === 2) {
-      var r2 = randInt(1, 9);
-      if (r2 >= 8) return makeSpanQuiz(false);   // 点到点：分 / 小时 / 秒
-      if (r2 === 1) { var a = randInt(1, 4), b = randInt(1, 5) * 10; return qInput(a + ' 时 ' + b + ' 分', a * 60 + b, '分', '=', '先把时换成分', '1 时 = 60 分'); }
-      if (r2 === 2) { var c = randInt(1, 4), d = randInt(1, 5) * 5; return qInput(c + ' 分 ' + d + ' 秒', c * 60 + d, '秒', '=', '先把分换成秒', '1 分 = 60 秒'); }
-      if (r2 === 3) return qInput('一年有', 12, '个月', '', '年月日', '一年有 12 个月');
-      if (r2 === 4) return qInput('平年 2 月有', 28, '天', '', '平年 2 月 28 天，闰年 29 天', '平年全年 365 天');
-      if (r2 === 5) return qInput('闰年全年有', 366, '天', '', '闰年 2 月有 29 天', '闰年全年 366 天');
-      if (r2 === 6) return qInput('大月有', 31, '天', '', '1、3、5、7、8、10、12 月是大月', '小月有 30 天');
-      return qInput('一年中有', 7, '个大月', '', '大月每月 31 天', '7 个大月、4 个小月');
-    }
-    var r3 = randInt(1, 8);
-    if (r3 <= 3) return makeSpanQuiz(true);      // 点到点：分 / 小时 / 秒 / 个月 / 年
-    if (r3 === 4) { var hh2 = randInt(1, 3), mm2 = randInt(1, 5) * 10; return qInput(hh2 + ' 时 ' + mm2 + ' 分', hh2 * 60 + mm2, '分', '=', '先把时换成分', '1 时 = 60 分'); }
-    if (r3 === 5) return unitCompareQuiz(CMP_TIM, '先统一单位，再比较大小');
-    if (r3 === 6) return qInput('一天有', 24, '时', '', '1 日 = 24 时', '');
-    if (r3 === 7) return unitChoiceQuiz(UNIT_TIM);
-    return makeSpanQuiz(true);
-  }
+    }},
+    {min:2, w:2, gen:function(lv){                       // 复名数 → 小单位
+      if (Math.random() < 0.5) { var a = randInt(1, lvMax(lv, 3, 8)), b = randInt(1, 5) * 10; return qInput(a + ' 时 ' + b + ' 分', a * 60 + b, '分', '=', '先把时换成分', '1 时 = 60 分'); }
+      var c = randInt(1, 4), d = randInt(1, 11) * 5; return qInput(c + ' 分 ' + d + ' 秒', c * 60 + d, '秒', '=', '先把分换成秒', '1 分 = 60 秒');
+    }},
+    {min:2, w:1, gen:function(){                         // 年月日常识
+      var r = randInt(1, 6);
+      if (r === 1) return qInput('一年有', 12, '个月', '', '年月日', '一年有 12 个月');
+      if (r === 2) return qInput('平年 2 月有', 28, '天', '', '平年 2 月 28 天，闰年 29 天', '平年全年 365 天');
+      if (r === 3) return qInput('闰年全年有', 366, '天', '', '闰年 2 月有 29 天', '闰年全年 366 天');
+      if (r === 4) return qInput('大月有', 31, '天', '', '1、3、5、7、8、10、12 月是大月', '小月有 30 天');
+      if (r === 5) return qInput('一年中有', 7, '个大月', '', '大月每月 31 天', '7 个大月、4 个小月');
+      return qInput('一天有', 24, '时', '', '1 日 = 24 时', '1 日 = 24 时');
+    }},
+    {min:3, w:2, gen:function(){ return makeSpanQuiz(false); }},  // 点到点：分 / 小时 / 秒
+    {min:4, w:2, gen:function(){ return unitCompareQuiz(CMP_TIM, '先统一单位，再比较大小'); }},
+    {min:5, w:1, gen:function(){ return unitChoiceQuiz(UNIT_TIM); }},
+    {min:6, w:4, gen:function(lv){ return unitAddSubQuiz(pick(ADD_TIM), lv); }},
+    {min:8, w:3, gen:function(){ return makeSpanQuiz(true); }},   // 点到点：含月 / 年
+    {min:9, w:3, gen:function(lv){ return unitAddSubQuiz(pick(ADD_TIM), lv); }}
+  ];
+  function makeTimeQuiz(level) { return lvGen(level, TIM_POOL); }
 
   /* ---- 表盘题：读表填时间 / 拨指针 ---- */
   function clockSvg(h, m) {
@@ -1265,7 +1389,8 @@ h1,h2,h3,p{margin:0}
   }
 
   function makeClockQuiz(level, forceType) {
-    var mins = level === 1 ? [0, 30] : [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
+    var mins = level <= 3 ? [0, 30] :
+               (level <= 6 ? [0, 15, 30, 45] : [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55]);
     var h = randInt(1, 12), m = pick(mins);
     var label = h + ':' + two(m);
     var type = forceType || (Math.random() < 0.5 ? 'read' : 'set');
@@ -1294,18 +1419,26 @@ h1,h2,h3,p{margin:0}
     };
   }
 
-  // 时间闯关整轮题目：固定放入 6 道表盘题（每段难度 2 道），保证每轮至少 5 道
-  function buildTimeRound(n) {
-    var arr = [];
-    for (var i = 0; i < n; i++) arr[i] = makeQuiz('time', i, n);
-    var l1 = Math.round(n / 3), l2 = Math.round(n * 2 / 3);
-    var segs = [[0, l1], [l1, l2], [l2, n]];
-    for (var si = 0; si < segs.length; si++) {
-      var idxs = [];
-      for (var j = segs[si][0]; j < segs[si][1]; j++) idxs.push(j);
-      shuffle(idxs);
-      for (var k = 0; k < 2 && k < idxs.length; k++) {
-        arr[idxs[k]] = makeClockQuiz(si + 1, k === 0 ? 'read' : 'set');
+  // 一级页面整轮题目：难度 1~10 级随机打乱，保证 10 级全覆盖、顺序随机
+  function buildLevelSeq(n) {
+    var seq = [];
+    for (var i = 0; i < n; i++) seq.push((i % QUIZ_LEVELS) + 1);
+    return shuffle(seq);
+  }
+  // 整轮队列：时间关在每段随机位置插入 6 道表盘题（3 读表 + 3 拨针），保证每轮 ≥5 道
+  function buildQuizRound(key, n) {
+    var seq = buildLevelSeq(n), arr = [], i;
+    for (i = 0; i < n; i++) arr[i] = makeQuiz(key, seq[i]);
+    if (key === 'time') {
+      var l1 = Math.round(n / 3), l2 = Math.round(n * 2 / 3);
+      var segs = [[0, l1], [l1, l2], [l2, n]];
+      for (var si = 0; si < segs.length; si++) {
+        var idxs = [];
+        for (var j = segs[si][0]; j < segs[si][1]; j++) idxs.push(j);
+        shuffle(idxs);
+        for (var k = 0; k < 2 && k < idxs.length; k++) {
+          arr[idxs[k]] = makeClockQuiz(seq[idxs[k]], k === 0 ? 'read' : 'set');
+        }
       }
     }
     return arr;
@@ -1321,15 +1454,13 @@ h1,h2,h3,p{margin:0}
     };
   }
 
-  function makeQuiz(key, index, total) {
-    var n = total || game.total || 10;
-    var l1 = Math.round(n / 3), l2 = Math.round(n * 2 / 3);
-    var level = index < l1 ? 1 : (index < l2 ? 2 : 3);
+  function makeQuiz(key, level) {
+    var lv = Math.max(1, Math.min(QUIZ_LEVELS, level || 1));
     if (key === 'calc') return makeCalcQuiz();
-    if (key === 'compare') return makeCompareQuiz(level);
-    if (key === 'length') return makeLengthQuiz(level);
-    if (key === 'weight') return makeWeightQuiz(level);
-    if (key === 'time') return makeTimeQuiz(level);
+    if (key === 'compare') return makeCompareQuiz(lv);
+    if (key === 'length') return makeLengthQuiz(lv);
+    if (key === 'weight') return makeWeightQuiz(lv);
+    if (key === 'time') return makeTimeQuiz(lv);
     return null;
   }
 
@@ -1477,7 +1608,7 @@ h1,h2,h3,p{margin:0}
         '<div class="game-desc">' + g.desc + '</div>' +
         '<span class="game-tag">' + g.tag + ' · ' + g.total + ' 题</span></div>' +
         '<span class="game-arrow">›</span>' +
-        (best ? '<span class="game-best">最佳 <em>' + best.correct + '/' + g.total + '</em></span>' : '');
+        (best ? '<span class="game-best">最佳 <em>' + best.correct + '/' + (best.total || g.total) + '</em></span>' : '');
       btn.addEventListener('click', function () {
         soundTap();
         if (key === 'calc') showScreen('screen-setup');
@@ -1546,8 +1677,8 @@ h1,h2,h3,p{margin:0}
     } else {
       game.cfg = null;
     }
-    game.queue = key === 'time' ? buildTimeRound(game.total) : null;
-    var first = game.queue ? game.queue[0] : makeQuiz(key, 0, game.total);
+    game.queue = key === 'calc' ? null : buildQuizRound(key, game.total);
+    var first = game.queue ? game.queue[0] : makeCalcQuiz();
     if (!first) { toast('出题失败，请重试'); return; }
 
     game.key = key;
@@ -1759,7 +1890,7 @@ h1,h2,h3,p{margin:0}
       card.classList.add('ok');
       fb.className = 'feedback ok';
       fb.innerHTML = '✓ 答对了' + (game.streak >= 3 ? ' <span class="combo">连击 ' + game.streak + '</span>' : '');
-      soundOk();
+      soundOk(game.streak);
       $('#confirmBtn').disabled = true;
       setTimeout(function () {
         if (game.roundId !== rid) return;
@@ -1794,7 +1925,7 @@ h1,h2,h3,p{margin:0}
   function nextQuestion() {
     var q = game.queue ? (game.queue[game.index] || null) : null;
     if (!game.queue) {
-      for (var ni = 0; ni < 3 && !q; ni++) q = makeQuiz(game.key, game.index, game.total);
+      for (var ni = 0; ni < 3 && !q; ni++) q = makeQuiz(game.key, 1);
     }
     if (!q) {
       toast('出题超时，本轮结束');
